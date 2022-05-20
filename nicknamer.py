@@ -28,6 +28,8 @@ async def predictNickname(username, introduction):
 
     prompt += f"\nName: {username}\nIntroduction: {introduction}\nNickname:"
 
+    print(prompt)
+
     prediction = co.generate(
         model='large',
         prompt=(prompt),

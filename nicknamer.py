@@ -9,114 +9,67 @@ from dotenv import load_dotenv
 load_dotenv()
 COHERE_KEY = os.getenv('COHERE_KEY')
 DISCORD_KEY = os.getenv('DISCORD_KEY')
-TEST_SERVER = os.getenv('TEST_SERVER')
-TEST_CHANNEL = os.getenv('TEST_CHANNEL')
+
+SERVER = int(os.getenv('SERVER'))
+INTRO_CHANNEL = int(os.getenv('INTRO_CHANNEL'))
+OUTPUT_CHANNEL = int(os.getenv('OUTPUT_CHANNEL'))
 
 client = discord.Client()
 co = cohere.Client(COHERE_KEY)
 
-lastId = 0
-fakeUser = None
+async def predictNickname(username, introduction):
 
-def predict(values, prompt):
+    if os.path.exists('./nicknamePrompt.txt'):
+        with open('./nicknamePrompt.txt', 'r') as file:
+            prompt = file.read()
+            file.close()
+    else:
+        raise ValueError("./nicknamePrompt.txt does not exist.")
+
+    prompt += f"\nName: {username}\nIntroduction: {introduction}\nNickname:"
+
     prediction = co.generate(
-        model='medium',
-        prompt=(values+prompt),
-        max_tokens=100,
-        temperature=0.5,
+        model='large',
+        prompt=(prompt),
+        max_tokens=50,
+        temperature=0.75,
         stop_sequences=["--"],
         k=0,
         p=0.75)
-    response = prompt+' {}'.format(prediction.generations[0].text)
-    if "--" in response:
-        response = response.split("--")[0]
+    response = ' {}'.format(prediction.generations[0].text)[1:]
     return response
-
-def generate_user():
-    users = ""
-    usergen = ""
-    if os.path.exists('./users.txt'):
-        with open('./users.txt', 'r') as file:
-            users = file.read()
-            usergen = predict(users, "")
-            file.close()
-        return usergen
-    return None
-
-def generate_user_embed(text):
-    random_color = discord.Colour.random()
-    letters = string.ascii_lowercase
-    random_string = ''.join(random.choice(letters) for i in range(10))
-    random_avatar = f"https://avatars.dicebear.com/api/adventurer/{random_string}.png"
-
-    embed=discord.Embed(title="Give me a nickname by replying!", description=text, color=random_color)
-    embed.set_thumbnail(url=random_avatar)
-    embed.add_field(name="React with ❌", value="If this user is malformed or inappropriate", inline=True)
-    embed.add_field(name="React with ✅", value="If this user is indistinguishable from reality", inline=True)
-
-    return embed
-
-async def new_user():
-    global lastId
-    global fakeUser
-
-    guild = client.get_guild(int(TEST_SERVER))
-    channel = guild.get_channel(int(TEST_CHANNEL))
-    
-    message = await channel.send("Generating new user. Please wait...")
-
-    fakeUser = generate_user()
-    embed = generate_user_embed(fakeUser)
-    
-    await message.edit(content="", embed=embed)
-    lastId = message.id
-
-    await message.add_reaction(emoji="❌")
-    await message.add_reaction(emoji="✅")
 
 @client.event
 async def on_ready():
-    await new_user()
-
-@client.event
-async def on_raw_reaction_add(react_obj):
-    if client.user == react_obj.member:
-        return
-
-    voteReacts=["❌", "✅"]
-
-    channel = client.get_channel(react_obj.channel_id)
-    message = await channel.fetch_message(react_obj.message_id)
-    if str(react_obj.emoji) in voteReacts and message.author.id == client.user.id:
-        if str(react_obj.emoji) == "❌":
-            await message.delete()
-            if message.id == lastId:
-                await new_user()
-        elif str(react_obj.emoji) == "✅":
-            with open('./users.txt', 'a+') as file:
-                if not len(file.read()+fakeUser+"--") > 2000:
-                    file.write(fakeUser)
-                    file.write('--')
-                file.close()
-    else:
-        print(str(react_obj.emoji) in voteReacts)
+    print("logged in!")
 
 @client.event
 async def on_message(message):
-    if message.reference and message.author != client.user:
-        if message.reference.resolved and message.reference.message_id == lastId:
-            await message.add_reaction(emoji="✅")
-            with open('./nicknames.txt', 'a') as file:
-                file.write(fakeUser)
-                if not "\n" in fakeUser[-3:-1]:
-                    file.write("\n")
-                file.write("Nickname: "+message.content)
-                file.write("\n--")
-                file.close()
-            await new_user()
 
+    # Check to see if we should even run code on it
+    if message.author == client.user:
+        return
+    elif message.channel.id != INTRO_CHANNEL:
+        if not (message.channel.id == OUTPUT_CHANNEL and message.content.startswith("-t")):
+            return
 
+    guild = client.get_guild(SERVER)
+    channel = guild.get_channel(OUTPUT_CHANNEL)
 
+    async with channel.typing():
+        username = message.author.name
+        avatar = message.author.avatar_url
+        introduction = message.content
+        nickname = await predictNickname(username, introduction)
+
+        # Clean up the response
+        nickname = nickname.split("\n")[0]
+        if nickname[0] == " ":
+            nickname = nickname[1:]
+
+        embed=discord.Embed(title=f"I hereby nickname them... {nickname}", color=0x21edff, description="Please let Libra know if this nickname is inappropriate!")
+        embed.set_author(name=f"{username} has posted an introduction!", icon_url=avatar)
+
+    await channel.send(embed=embed)
+    
 client.run(DISCORD_KEY)
-
-

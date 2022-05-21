@@ -34,6 +34,8 @@ async def predictNickname(username, introduction):
         raise ValueError("./nicknamePrompt.txt does not exist.")
 
     prompt += f"\nName: {username}\nIntroduction: {introduction}\nNickname:"
+    with open('./lastPrompt.txt', 'w') as file:
+        file.write(prompt)
 
     prediction = co.generate(
         model='large',
@@ -50,7 +52,8 @@ async def getNickname(username, introduction, avatar):
     while (True):
         nickname = await predictNickname(username, introduction)
 
-        if nickname == "":
+        if nickname == "" or nickname.isspace():
+            print("skipping empty nickname")
             continue
 
         # Clean up the response
@@ -65,16 +68,34 @@ async def getNickname(username, introduction, avatar):
         similarity = similar(nickname, username)
 
         if not (similarity > MAX_SIMILARITY or len(nickname.split(" ")) > MAX_WORDS or len(nickname) < MIN_CHARS):
-            print(f"Accepted nickname {nickname}")
+            print(f"Accepted nickname: {nickname}")
             if similarity <=  MAX_SIMILARITY:
                 print(f"Similiarity is [{similarity}]")
             break
         else:
-            print(f"Rejected nickname {nickname}")
+            print(f"Rejected nickname: {nickname}")
 
     embed=discord.Embed(title=f"I hereby nickname them... {nickname}", color=0x21edff, description="Please let Libra know if this nickname is inappropriate!")
     embed.set_author(name=f"{username} has posted an introduction!", icon_url=avatar)
     return embed
+
+def getInfo(message):
+    username = message.author.name
+    introduction = message.content
+
+    if introduction.startswith("-u "):
+        startIndex = introduction.index('-u ')+3
+        endIndex = introduction.index('-i ')
+        username = introduction[startIndex:endIndex]
+        introduction = introduction[endIndex:]
+
+    if introduction.startswith("-i "):
+        startIndex = introduction.index(" ")+1
+        introduction = introduction[startIndex:]
+
+    avatar = message.author.avatar_url
+
+    return(username, introduction, avatar)
 
 @client.event
 async def on_ready():
@@ -89,7 +110,7 @@ async def on_message(message):
     if message.author == client.user:
         return
     elif message.channel.id != INTRO_CHANNEL:
-        if not (message.channel.id == OUTPUT_CHANNEL and message.content.startswith("-t ")):
+        if not (message.channel.id == OUTPUT_CHANNEL and (message.content.startswith("-u ") or message.content.startswith("-i "))):
             return
 
     if sentMessage != None:
@@ -100,14 +121,13 @@ async def on_message(message):
     channel = guild.get_channel(OUTPUT_CHANNEL)
 
     async with channel.typing():
-        username = message.author.name
+        result = getInfo(message)
 
-        introduction = message.content
-        if introduction.startswith("-t "):
-            introduction = introduction.split(" ")[1:]
+        username = result[0]
+        introduction = result[1]
+        avatar = result[2]
 
-        avatar = message.author.avatar_url
-
+        print(f"Finding nickname for {username}")
         embed = await getNickname(username, introduction, avatar)
 
     sentMessage = await channel.send(embed=embed)
@@ -126,20 +146,23 @@ async def on_raw_reaction_add(react_obj):
     channel = client.get_channel(react_obj.channel_id)
     message = await channel.fetch_message(react_obj.message_id)
 
+    if str(react_obj.emoji) == "❌":
+            await message.delete()
+            return
+
     if message == sentMessage:
         if str(react_obj.emoji) == "🔄":
             await sentMessage.clear_reactions()
             embed=discord.Embed(title=f"Rerolling...", color=0x21edff)
             await sentMessage.edit(embed=embed)
 
-            username = introMessage.author.name
+            result = getInfo(introMessage)
 
-            introduction = introMessage.content
-            if introduction.startswith("-t "):
-                introduction = introduction.split(" ")[1:]
+            username = result[0]
+            introduction = result[1]
+            avatar = result[2]
 
-            avatar = introMessage.author.avatar_url
-
+            print(f"Finding nickname for {username}")
             embed = await getNickname(username, introduction, avatar)
 
             await sentMessage.add_reaction("🔄")

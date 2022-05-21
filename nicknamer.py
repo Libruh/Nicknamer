@@ -1,6 +1,7 @@
 import os
 import random
 import string
+from difflib import SequenceMatcher
 import os.path
 import cohere
 import discord
@@ -20,6 +21,9 @@ co = cohere.Client(COHERE_KEY)
 introMessage = None
 sentMessage = None
 
+def similar(a, b):
+    return SequenceMatcher(None, a, b).ratio()
+
 async def predictNickname(username, introduction):
 
     if os.path.exists('./nicknamePrompt.txt'):
@@ -30,9 +34,6 @@ async def predictNickname(username, introduction):
         raise ValueError("./nicknamePrompt.txt does not exist.")
 
     prompt += f"\nName: {username}\nIntroduction: {introduction}\nNickname:"
-
-    if len(prompt) > 2043:
-        prompt = prompt[0:2040]
 
     prediction = co.generate(
         model='large',
@@ -49,13 +50,24 @@ async def getNickname(username, introduction, avatar):
     while (True):
         nickname = await predictNickname(username, introduction)
 
+        if nickname == "":
+            continue
+
         # Clean up the response
         nickname = nickname.split("\n")[0]
         if nickname[0] == " ":
             nickname = nickname[1:]
 
-        if not (nickname == username or len(nickname.split(" ")) > 2):
+        MAX_SIMILARITY = float(os.getenv('MAX_SIMILARITY'))
+        MAX_WORDS = int(os.getenv('MAX_WORDS'))
+        MIN_CHARS = int(os.getenv('MIN_CHARS'))
+
+        similarity = similar(nickname, username)
+
+        if not (similarity > MAX_SIMILARITY or len(nickname.split(" ")) > MAX_WORDS or len(nickname) < MIN_CHARS):
             print(f"Accepted nickname {nickname}")
+            if similarity <=  MAX_SIMILARITY:
+                print(f"Similiarity is [{similarity}]")
             break
         else:
             print(f"Rejected nickname {nickname}")
@@ -132,6 +144,5 @@ async def on_raw_reaction_add(react_obj):
 
             await sentMessage.add_reaction("🔄")
             await sentMessage.edit(embed=embed)
-
     
 client.run(DISCORD_KEY)

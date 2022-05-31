@@ -2,7 +2,7 @@
 
 ## Setup
 
-### .env Files
+### .env File
 
 The .env file consists of the below info, you'll need to set/adjust these
 
@@ -26,7 +26,7 @@ There are a few JSON files needed to run the bot
 
 #### nicknamePrompt.json
 
-This file is ussed to preface the generated prompt, you'll need to provide about a dozen intros and some nicknames for them to get started.
+This file is used to preface the generated prompt, you'll need to provide about a dozen intros and some nicknames for them to get started.
 
 ```
 Name: Sam

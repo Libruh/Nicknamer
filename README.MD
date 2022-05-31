@@ -1,4 +1,8 @@
 # Nicknamer
+
+## Invite Link
+Add the bot to your server by clicking [here](https://discord.com/api/oauth2/authorize?client_id=974129951907397642&permissions=75776&scope=bot)!
+
 ## What is this?
 Nicknamer is a small project I began to practice AI response generation.
 

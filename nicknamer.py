@@ -11,6 +11,16 @@ load_dotenv()
 COHERE_KEY = os.getenv('COHERE_KEY')
 DISCORD_KEY = os.getenv('DISCORD_KEY')
 
+MAX_TRIES = int(os.getenv('MAX_TRIES'))
+MAX_SIMILARITY = float(os.getenv('MAX_SIMILARITY'))
+MAX_WORDS = int(os.getenv('MAX_WORDS'))
+MIN_CHARS = int(os.getenv('MIN_CHARS'))
+
+TEMPERATURE = float(os.getenv('TEMPERATURE'))
+K_VAL = int(os.getenv('K'))
+P_VAL = float(os.getenv('P'))
+
+
 client = discord.Client()
 co = cohere.Client(COHERE_KEY)
 
@@ -50,7 +60,7 @@ class guildManagerClass():
                 if str(channel.type) == "text": generalChannel = channel.id
 
         if introChannel is not None and generalChannel is not None:
-            print(f"Adding {guild.id} - {introChannel}, {generalChannel}")
+            print(f"Adding {guild.name}: {guild.id} - {introChannel}, {generalChannel}")
             self.addGuild(guild.id, introChannel, generalChannel)
             return True
         return False
@@ -69,14 +79,14 @@ async def predictNickname(username, introduction):
     else:
         raise ValueError("./nicknamePrompt.txt does not exist.")
 
-    prompt += f"\nName: {username}\nIntroduction: {introduction}\nNickname:"
+    introLines = introduction.splitlines()
+    strippedIntro = ''.join(introLines)
+
+    prompt += f"\nName: {username}\nIntroduction: {strippedIntro}\nNickname:"
     with open('./lastPrompt.txt', 'w') as file:
         file.write(prompt)
 
-    TEMPERATURE = float(os.getenv('TEMPERATURE'))
-    K_VAL = int(os.getenv('K'))
-    P_VAL = float(os.getenv('P'))
-    print(f"Temperature: {TEMPERATURE}, p: {P_VAL}, k: {K_VAL}")
+    print(f"temp: {TEMPERATURE}, p: {P_VAL}, k: {K_VAL}")
 
     prediction = co.generate(
         model='large',
@@ -96,54 +106,83 @@ async def getNickname(username, introduction, avatar):
     introduction = re.sub(pattern, '', introduction)
     introduction = introduction.replace("pronouns", "")
 
+    tries = 0
+
     while (True):
+        rejected = False
+        
+        tries += 1
+        if tries > MAX_TRIES:
+            return
+
         nickname = await predictNickname(username, introduction)
 
+        # If the response appears empty, Reject
         if nickname == "" or nickname.isspace():
-            print("skipping empty nickname")
-            continue
+            print("[0]Rejected nickname for being empty")
+            rejected = True
 
+        # If any banned word is detected in the response, Reject
         for word in bannedWords:
             if word in nickname.lower():
-                print("Reject nickname for profanity")
-                continue
+                print("[1]Rejected nickname for profanity")
+                rejected = True
 
-        # Clean up the response
+        # Clean up the response for further processing
         nickname = nickname.split("\n")[0]
         try:
             if nickname[0] == " ":
                 nickname = nickname[1:]
         except:
-            print("skipping empty nickname")
-            continue
-
-
-        MAX_SIMILARITY = float(os.getenv('MAX_SIMILARITY'))
-        MAX_WORDS = int(os.getenv('MAX_WORDS'))
-        MIN_CHARS = int(os.getenv('MIN_CHARS'))
+            print("[2]Rejected nickname for error in cleanup")
+            rejected = True
 
         similarity = similar(nickname, username)
 
-        if not (similarity > MAX_SIMILARITY or len(nickname.split(" ")) > MAX_WORDS or len(nickname) < MIN_CHARS):
-            if similarity <=  MAX_SIMILARITY:
-                print(f"Similiarity is [{similarity}]")
-                if "name is " in introduction.lower():
-                    realName = introduction.lower().split("name is ")[1].split(" ")[0]
-                    realName = realName.replace(",","")
+        # If the nickname doesn't fit the specified sizes, Reject
+        if (len(nickname.split(" ")) > MAX_WORDS or len(nickname) < MIN_CHARS):
+            print(f"[3]Rejected nickname: {nickname}")
+            rejected = True
 
-                    realSimilarity = similar(realName, nickname.lower())
+        # If the nickname is too similar to the username, Reject
+        elif similarity > MAX_SIMILARITY:
+            print(f"[4]Rejected nickname: {nickname}")
+            rejected = True
 
-                    if realSimilarity <= 0.9:
-                        print(f"Accepted nickname: {nickname}")
-                        break
-                    else:
-                        print(f"Rejected nickname: {nickname}")
-                else:
-                    print(f"Accepted nickname: {nickname}")
-                    break
+        # If username is any single word in the nickname, Reject
+        for word in nickname.split(" "):
+            if username == word:
+                print(f"[5]Rejected nickname: {nickname}")
+                rejected = True
+        
+        # Similarity comparisons using a detected real name
+        realIdentifiers = ["name is", "go by", "am called","call me"]
+        for identifier in realIdentifiers:
+            if identifier in introduction.lower():
+                realName = introduction.lower().split(identifier+" ")[1].split(" ")[0]
+                realName = realName.replace(",","")
+
+                # If realname is any single word in the nickname, Reject
+                for word in nickname.split(" "):
+                    if realName == word:
+                        print(f"[6]Rejected nickname: {nickname}")
+                        rejected = True
+
+                realSimilarity = similar(realName, nickname.lower())
+
+                # If the nickname is too similar to the realname, Reject
+                if realSimilarity > MAX_SIMILARITY:
+                   print(f"[7]Rejected nickname: {nickname}")
+                   rejected = True
+
+
+        if not rejected:
+            # If this point was reached, there is no issue with the name, Accept
+            print(f"Accepted nickname: {nickname}")
+            break
         else:
-            print(f"Rejected nickname: {nickname}")
-
+            continue
+                
     percentage = "{0:.0%}".format(similarity)
 
     embed=discord.Embed(title=f"Hi {username}, Welcome to the server!", color=0x21edff, description=f"Thank you for posting an introduction. I'm a bot that generates nicknames, based on what you wrote, I think the nickname **{nickname}** fits you best!")
@@ -188,6 +227,10 @@ def getInfo(message):
 
 @client.event
 async def on_message(message):
+
+    if str(message.guild.id) == "481904955016478743":
+        print("skipping intro in gk server")
+        return
 
     # Check if the guild is known, and if not, don't run on it
     guildData = guildManager.getGuild(message.guild.id)

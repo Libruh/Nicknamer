@@ -36,6 +36,7 @@ Nickname: SingingSam
 Name: [NAME HERE]
 Introduction: [INTRO HERE]
 Nickname: [NICKNAME HERE]
+--
 ```
 
 #### banned.json

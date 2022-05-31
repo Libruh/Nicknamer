@@ -11,10 +11,6 @@ load_dotenv()
 COHERE_KEY = os.getenv('COHERE_KEY')
 DISCORD_KEY = os.getenv('DISCORD_KEY')
 
-SERVER = int(os.getenv('SERVER'))
-INTRO_CHANNEL = int(os.getenv('INTRO_CHANNEL'))
-OUTPUT_CHANNEL = int(os.getenv('OUTPUT_CHANNEL'))
-
 client = discord.Client()
 co = cohere.Client(COHERE_KEY)
 
